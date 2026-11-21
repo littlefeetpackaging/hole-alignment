@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hole alignment monitor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* VOICE: shop-floor instrument, calm and exact.
+   IDEA: a dial indicator / inspection gauge reading one number.
+   PICTURE: the live camera view with the measured opening tinted and the hole outline.
+   COLOUR and TYPE: black and white plus one mint field; Space Grotesk numbers, Inter text.
+   LAYOUT: viewer left (top on phone), big reading + bound meter right, settings below. */
+:root{color-scheme:light dark;--bg:light-dark(#ffffff,#0a0a0a);--ink:light-dark(#0a0a0a,#f4f4f4);--mute:light-dark(#5c5c5c,#a3a3a3);--line:light-dark(#dcdcdc,#2a2a2a);--mint:#b8f5d0;--mintInk:light-dark(#0a0a0a,#b8f5d0);--card:light-dark(#f5f5f5,#151515);--warn:#ffb4a8}
+:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 Inter,system-ui,sans-serif;overflow-x:clip}
+h1,.num,.state{font-family:"Space Grotesk",Inter,sans-serif}
+.band{padding:clamp(16px,3vw,40px) max(4vw,14px)}
+header.band{padding-bottom:8px}
+h1{font-size:clamp(28px,4vw,40px);line-height:1.05;margin:0 0 4px;text-wrap:balance}
+.sub{color:var(--mute);margin:0;max-width:70ch}
+.main{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:20px;max-width:1240px;margin:auto}
+.view{position:relative;background:#000;border-radius:14px;overflow:hidden;aspect-ratio:3/4;max-height:78vh;touch-action:none}
+.view canvas{position:absolute;inset:0;width:100%;height:100%}
+.zoom{position:absolute;right:10px;bottom:10px;display:flex;gap:6px}
+.zoom button{min-width:48px;min-height:48px;padding:0 12px;border-radius:12px;background:rgba(0,0,0,.6);color:#fff;border:1px solid rgba(255,255,255,.5);font-size:20px}
+.zoom button.fit{font-size:14px}
+.zlab{position:absolute;right:12px;top:12px;padding:6px 10px;border-radius:999px;background:rgba(0,0,0,.6);color:#fff;font:600 14px Inter,sans-serif}
+.badge{position:absolute;left:12px;top:12px;padding:6px 12px;border-radius:999px;background:rgba(0,0,0,.6);color:#fff;font:600 14px Inter,sans-serif}
+.badge.ok{background:var(--mint);color:#0a0a0a}
+.msg{position:absolute;inset:auto 12px 70px 12px;color:#fff;background:rgba(0,0,0,.7);padding:10px 12px;border-radius:10px;font-size:14px;display:none}
+.read{background:var(--mint);color:#0a0a0a;border-radius:14px;padding:20px;display:flex;flex-direction:column;gap:14px}
+.state{font-size:clamp(30px,5vw,48px);font-weight:700;line-height:1.05}
+.big{display:flex;gap:24px;flex-wrap:wrap}
+.big div{display:flex;flex-direction:column}
+.num{font-size:clamp(30px,6vw,52px);font-weight:700;line-height:1;white-space:nowrap}
+.lab{font-size:13px;color:#2b4a38}
+.meter{position:relative;height:26px;background:rgba(0,0,0,.12);border-radius:6px;overflow:visible;margin-top:18px}
+.meter .fill{position:absolute;inset:0 auto 0 0;background:#0a0a0a;border-radius:6px;transition:width .1s}
+.meter .mk{position:absolute;top:-18px;bottom:-4px;width:2px;background:#0a0a0a}
+.meter .mk span{position:absolute;top:-2px;left:4px;font-size:12px;white-space:nowrap}
+.meter .mk.c span{left:auto;right:4px}
+.dir{font-size:15px}
+#spark{width:100%;height:70px;display:block}
+.ctl{max-width:1240px;margin:auto;display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}
+fieldset{border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin:0;background:var(--card)}
+legend{font-weight:600;padding:0 6px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:6px 0}
+label{font-size:14px;color:var(--mute)}
+input[type=number]{font:16px Inter,sans-serif;width:96px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)}
+input[type=range]{width:100%;accent-color:#0a0a0a;height:32px}
+:root[data-theme=dark] input[type=range]{accent-color:var(--mint)}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]) input[type=range]{accent-color:var(--mint)}}
+button{font:600 15px Inter,sans-serif;min-height:44px;padding:0 16px;border-radius:10px;border:1px solid var(--ink);background:var(--bg);color:var(--ink);cursor:pointer}
+button.access{display:block;width:100%;max-width:1240px;margin:0 auto 16px;min-height:56px;font-size:18px;background:var(--mint);color:#0a0a0a;border:2px solid #0a0a0a}
+button.on{background:var(--ink);color:var(--bg)}
+button:focus-visible,input:focus-visible{outline:3px solid #3bbf7a;outline-offset:2px}
+.hint{font-size:13px;color:var(--mute);margin:6px 0 0}
+.val{font-variant-numeric:tabular-nums;color:var(--ink);font-weight:600;white-space:nowrap}
+details{max-width:1240px;margin:auto}
+summary{cursor:pointer;font-weight:600;min-height:44px;display:flex;align-items:center}
+@media(max-width:760px){.main{grid-template-columns:minmax(0,1fr)}.view{max-height:62vh}}
+@media(prefers-reduced-motion:reduce){.meter .fill{transition:none}}
+</style>
+</head>
+<body>
+<header class="band">
+  <button id="bAccess" class="access">Access camera</button>
+  <h1>Hole alignment monitor</h1>
+  <p class="sub">Point the camera down the top hole. The tinted area is light passing through both holes: it grows from nothing, through a crescent, to a full circle when the holes line up.</p>
+</header>
+
+<section class="band" style="padding-top:8px">
+  <div class="main">
+    <div class="view" id="view">
+      <canvas id="cv"></canvas>
+      <div class="badge" id="badge">No source</div>
+      <div class="zlab" id="zLab">1.0×</div>
+      <div class="zoom"><button class="fit" id="zFit" aria-label="Zoom to circle">Fit circle</button><button id="zOut" aria-label="Zoom out">−</button><button id="zIn" aria-label="Zoom in">+</button><button class="fit" id="zReset" aria-label="Reset zoom">1×</button></div>
+      <div class="msg" id="msg"></div>
+    </div>
+    <div class="read" aria-live="polite">
+      <div class="state" id="state">Choose a source</div>
+      <div class="big">
+        <div><span class="num" id="pct">–</span><span class="lab">Overlap of full opening</span></div>
+        <div><span class="num" id="off">–</span><span class="lab" id="offLab">Centre offset</span></div>
+      </div>
+      <div class="meter" id="meter"><div class="fill" id="fill" style="width:0"></div>
+        <div class="mk u" id="mkU"><span>Upper bound</span></div>
+        <div class="mk c" id="mkC"><span>Completion</span></div>
+      </div>
+      <div class="dir" id="dir">&nbsp;</div>
+      <canvas id="spark" aria-label="Overlap history"></canvas>
+    </div>
+  </div>
+</section>
+
+<section class="band" style="padding-top:0">
+  <div class="ctl">
+    <fieldset><legend>Source</legend>
+      <div class="row">
+        <button id="bRec">Record video</button>
+        <button id="bPhoto">Take photo</button>
+        <button id="bFile">Choose file</button>
+        <button id="bCam">Live camera</button>
+        <button id="bDemo">Demo</button>
+        <button id="bTorch" hidden>Light</button>
+      </div>
+      <input type="file" id="file" accept="video/*,image/*" hidden>
+      <input type="file" id="rec" accept="video/*" capture="environment" hidden>
+      <input type="file" id="photo" accept="image/*" capture="environment" hidden>
+      <p class="hint">Record video and Take photo open your phone's camera app, then analyse the result here; they work anywhere. Live camera only works when this page is opened from an https website.</p>
+    </fieldset>
+
+    <fieldset><legend>Holes</legend>
+      <div class="row"><label for="d1">Top hole Ø (mm)</label><input type="number" id="d1" value="10" min="0.1" step="0.1"></div>
+      <div class="row"><label for="d2">Lower hole Ø (mm)</label><input type="number" id="d2" value="10" min="0.1" step="0.1"></div>
+      <p class="hint" id="floatTxt"></p>
+      <div class="row"><label>The opening looks</label>
+        <button id="pBright" class="on">Bright</button><button id="pDark">Dark</button></div>
+      <p class="hint">Bright if you light from behind (best). Dark if you look into an unlit bore.</p>
+    </fieldset>
+
+    <fieldset><legend>Bounds</legend>
+      <label for="uB">Upper bound (interface begins) <span class="val" id="uV"></span></label>
+      <input type="range" id="uB" min="0.5" max="30" step="0.5" value="2">
+      <label for="cB">Completion bound (aligned) <span class="val" id="cV"></span></label>
+      <input type="range" id="cB" min="70" max="100" step="0.5" value="97">
+      <p class="hint">Below the upper bound the holes count as apart. At or above completion they count as aligned. The offset each bound means is shown in mm.</p>
+    </fieldset>
+
+    <fieldset><legend>Zoom</legend>
+      <label for="zS">View zoom <span class="val" id="zV"></span></label>
+      <input type="range" id="zS" min="0" max="1" step="0.001" value="0">
+      <p class="hint">Pinch the view with two fingers, or use + / −. The measuring circle stays on the same spot of the part while you zoom. Drag with one finger to move the circle. "Fit circle" fills the view with the analysis area.</p>
+    </fieldset>
+
+    <fieldset><legend>Measuring circle</legend>
+      <label for="rS">Size <span class="val" id="rV"></span></label>
+      <input type="range" id="rS" min="0.02" max="0.49" step="0.002" value="0.3">
+      <p class="hint">Drag on the view to move the circle; size it to sit right on the top hole's edge. Zoom in first for a more precise fit.</p>
+      <div class="row"><button id="bCal">Set as fully open</button><button id="bCalR">Reset</button></div>
+      <p class="hint" id="calTxt">Uses the geometric maximum. With the holes aligned, tap "Set as fully open" to calibrate to your parts.</p>
+      <div class="row"><label><input type="checkbox" id="autoT" checked> Auto threshold</label></div>
+      <input type="range" id="thr" min="0" max="255" value="128" disabled aria-label="Manual threshold">
+    </fieldset>
+  </div>
+</section>
+
+<section class="band" style="padding-top:0">
+<details><summary>How the reading is worked out</summary>
+<p class="sub">Each frame, the pixels inside the circle are split into "opening" and "metal" with an automatic (Otsu) threshold; the last good threshold is kept when the circle is uniform, so fully apart and fully aligned both read correctly. The open fraction is compared with the most that can ever show through (the smaller hole's area), giving the overlap %. The overlap of two circles of the diameters you entered is then solved backwards for the distance between their centres, so a crescent of a given size becomes an offset in mm. If the holes differ in size, any offset up to half the difference still reads fully open: that is the float shown under Holes. The centre of the tinted region shows which side the lower hole sits on.</p>
+</details>
+</section>
+
+<script>
+{
+const $=id=>document.getElementById(id);
+const cv=$('cv'),cx=cv.getContext('2d');
+const N=128,work=document.createElement('canvas');work.width=work.height=N;
+const wx=work.getContext('2d',{willReadFrequently:true});
+const mask=document.createElement('canvas');mask.width=mask.height=N;const mx=mask.getContext('2d');
+const maskImg=mx.createImageData(N,N);
+const img=new Image();const video=document.createElement('video');video.muted=true;video.playsInline=true;video.setAttribute('playsinline','');
+const demo=document.createElement('canvas');demo.width=480;demo.height=640;const dx=demo.getContext('2d');
+
+let S={rx:.5,ry:.5,rr:.3,Z:1,fx:.5,fy:.5,d1:10,d2:10,bright:true,u:2,c:97,auto:true,thr:128,cal:null};
+try{Object.assign(S,JSON.parse(localStorage.getItem('holeAlign2')||'{}'))}catch(e){}
+const save=()=>{try{localStorage.setItem('holeAlign2',JSON.stringify(S))}catch(e){}};
+
+let src=null,stream=null,track=null,lastT=null,ema=null,aligned=false,hist=[],audio=null,torchOn=false,demoT0=0;
+
+/* ---- geometry: overlap area of circles r1=1 and r2=k at centre distance d ---- */
+const RHO=0.96; // sampled radius as a fraction of the top hole (keeps the rim out)
+const L=(a,b,d)=>{ // overlap area of circles radius a and b, centres d apart
+  if(d>=a+b)return 0; if(d<=Math.abs(a-b))return Math.PI*Math.min(a,b)**2;
+  const c=v=>Math.max(-1,Math.min(1,v));
+  const p=Math.acos(c((d*d+a*a-b*b)/(2*d*a))), q=Math.acos(c((d*d+b*b-a*a)/(2*d*b)));
+  return a*a*p+b*b*q-0.5*Math.sqrt(Math.max(0,(-d+a+b)*(d+a-b)*(d-a+b)*(d+a+b)));
+};
+const invA=(A,a,b)=>{let lo=Math.abs(a-b),hi=a+b;
+  if(A>=Math.PI*Math.min(a,b)**2-1e-9)return lo; if(A<=0)return hi;
+  for(let i=0;i<40;i++){const m=(lo+hi)/2; if(L(a,b,m)>A)lo=m; else hi=m;}
+  return (lo+hi)/2;};
+const offsetFor=(f,k)=>invA(f*Math.PI*Math.min(1,k)**2,1,k); // f = fraction of the full opening
+const overlapAt=(d,k)=>L(1,k,d)/(Math.PI*Math.min(1,k)**2);
+const kk=()=>S.d2/S.d1, mm=d=>d*S.d1/2;
+const fmt=v=>v<10?v.toFixed(2):v.toFixed(1);
+
+/* ---- layout ---- */
+function size(){const r=cv.getBoundingClientRect(),p=devicePixelRatio||1;cv.width=Math.round(r.width*p);cv.height=Math.round(r.height*p);}
+const ro=new ResizeObserver(()=>{size();drawSpark()});ro.observe($('view'));
+
+function srcDims(){if(src==='demo')return[demo.width,demo.height];if(src==='img')return[img.naturalWidth||1,img.naturalHeight||1];return[video.videoWidth||1,video.videoHeight||1];}
+const ZMAX=10;
+function clampView(){const[vw,vh]=srcDims(),cw=cv.width,ch=cv.height,s=Math.max(cw/vw,ch/vh)*S.Z;
+  const hx=cw/(2*s*vw),hy=ch/(2*s*vh);
+  S.fx=hx>=.5?.5:Math.min(1-hx,Math.max(hx,S.fx));S.fy=hy>=.5?.5:Math.min(1-hy,Math.max(hy,S.fy));}
+function xf(){const[vw,vh]=srcDims(),cw=cv.width,ch=cv.height,s=Math.max(cw/vw,ch/vh)*S.Z;
+  return{s,ox:cw/2-S.fx*vw*s,oy:ch/2-S.fy*vh*s,vw,vh};}
+const toSrc=(X,Y)=>{const t=xf();return[(X-t.ox)/t.s/t.vw,(Y-t.oy)/t.s/t.vh];};
+function setZoom(z,X,Y){ // keep display point X,Y fixed
+  const t=xf();X??=cv.width/2;Y??=cv.height/2;const px=(X-t.ox)/t.s,py=(Y-t.oy)/t.s;
+  S.Z=Math.min(ZMAX,Math.max(1,z));const s=Math.max(cv.width/t.vw,cv.height/t.vh)*S.Z;
+  S.fx=(cv.width/2+px*s-X)/(t.vw*s);S.fy=(cv.height/2+py*s-Y)/(t.vh*s);clampView();syncUI();}
+function zoomToCircle(){const t=xf(),m=Math.min(t.vw,t.vh),base=Math.max(cv.width/t.vw,cv.height/t.vh);
+  const want=0.8*Math.min(cv.width,cv.height)/(2*S.rr*m*base);
+  S.Z=Math.min(ZMAX,Math.max(1,want));S.fx=S.rx;S.fy=S.ry;clampView();syncUI();}
+
+/* ---- demo scene: top plate with hole, lower hole sliding under it ---- */
+const noise=document.createElement('canvas');noise.width=demo.width;noise.height=demo.height;
+{const n=noise.getContext('2d'),im=n.createImageData(noise.width,noise.height);for(let i=0;i<im.data.length;i+=4){const v=110+Math.random()*40;im.data[i]=im.data[i+1]=im.data[i+2]=v;im.data[i+3]=255}n.putImageData(im,0,0)}
+function drawDemo(t){
+  const W=demo.width,H=demo.height,R=130,k=kk(),ph=((t-demoT0)/9000)%1;
+  const e=ph<.6?ph/.6:ph<.75?1:1-(ph-.75)/.25; // approach, dwell, retreat
+  const d=(1-e)*(1+k+0.4)*R+ (e>=1?R*0.01:0);
+  const ang=-0.7;
+  dx.drawImage(noise,0,0);
+  dx.save();dx.beginPath();dx.arc(W/2,H/2,R,0,7);dx.clip();
+  dx.fillStyle='#3a3a3a';dx.fillRect(0,0,W,H);
+  dx.beginPath();dx.arc(W/2+Math.cos(ang)*d,H/2+Math.sin(ang)*d,R*k,0,7);dx.fillStyle='#f2f2f2';dx.fill();
+  dx.restore();
+  dx.lineWidth=6;dx.strokeStyle='#555';dx.beginPath();dx.arc(W/2,H/2,R+3,0,7);dx.stroke();
+  return R;
+}
+function fitDemo(){S.rx=.5;S.ry=.5;S.rr=130/Math.min(demo.width,demo.height);S.Z=1;S.fx=S.fy=.5;syncUI();}
+
+/* ---- measurement ---- */
+function measure(source){
+  const[vw,vh]=srcDims(),sx=S.rx*vw,sy=S.ry*vh,sr=Math.max(2,S.rr*Math.min(vw,vh));
+  wx.clearRect(0,0,N,N);wx.drawImage(source,sx-sr,sy-sr,2*sr,2*sr,0,0,N,N);
+  const px=wx.getImageData(0,0,N,N).data,h=new Uint32Array(256),g=new Uint8Array(N*N),inC=new Uint8Array(N*N);
+  const c=N/2,rr=(N/2*RHO)**2;let tot=0;
+  for(let y=0;y<N;y++)for(let x=0;x<N;x++){const i=y*N+x;if((x-c+.5)**2+(y-c+.5)**2>rr)continue;
+    const j=i*4,v=(px[j]*77+px[j+1]*150+px[j+2]*29)>>8;g[i]=v;inC[i]=1;h[v]++;tot++;}
+  let T=S.thr;
+  if(S.auto){ // Otsu with contrast guard
+    let sum=0;for(let i=0;i<256;i++)sum+=i*h[i];
+    let sB=0,wB=0,best=-1,bt=128,m0=0,m1=0;
+    for(let i=0;i<256;i++){wB+=h[i];if(!wB)continue;const wF=tot-wB;if(!wF)break;sB+=i*h[i];
+      const a=sB/wB,b=(sum-sB)/wF,v=wB*wF*(a-b)**2;if(v>best){best=v;bt=i;m0=a;m1=b;}}
+    const minor=Math.min(...[0,0].map((_,q)=>{let n=0;for(let i=0;i<256;i++)if(q?i>bt:i<=bt)n+=h[i];return n}))/tot;
+    if(m1-m0>=30&&minor>0.004){lastT=bt;}
+    T=lastT??128;
+  }
+  let n=0,mxs=0,mys=0;const md=maskImg.data;
+  for(let i=0;i<N*N;i++){const j=i*4;let on=0;
+    if(inC[i]){on=S.bright?g[i]>T:g[i]<T;}
+    if(on){n++;mxs+=i%N;mys+=(i/N|0);md[j]=184;md[j+1]=245;md[j+2]=208;md[j+3]=150}else md[j+3]=0;}
+  mx.putImageData(maskImg,0,0);
+  return{frac:tot?n/tot:0,cx:n?mxs/n-c+.5:0,cy:n?mys/n-c+.5:0,n};
+}
+
+/* ---- render loop ---- */
+function frame(t){
+  requestAnimationFrame(frame);
+  if(!src)return;
+  let source=video;
+  if(src==='demo'){drawDemo(t);source=demo;}else if(src==='img'){if(!img.complete)return;source=img;}else if(video.readyState<2)return;
+  clampView();const tr=xf();cx.fillStyle='#000';cx.fillRect(0,0,cv.width,cv.height);
+  cx.drawImage(source,tr.ox,tr.oy,tr.vw*tr.s,tr.vh*tr.s);
+  const r=measure(source),k=kk(),geoMax=L(RHO,k,0)/(Math.PI*RHO*RHO);
+  const fr=Math.max(0,Math.min(geoMax,S.cal?r.frac*geoMax/S.cal:r.frac));
+  ema=ema==null?fr:ema+0.3*(fr-ema);
+  const d=invA(ema*Math.PI*RHO*RHO,RHO,k),f=overlapAt(d,k),P=f*100;
+  // overlay
+  const m=Math.min(cv.width,cv.height),pr=S.rr*Math.min(tr.vw,tr.vh)*tr.s,X=tr.ox+S.rx*tr.vw*tr.s,Y=tr.oy+S.ry*tr.vh*tr.s;
+  cx.save();cx.beginPath();cx.arc(X,Y,pr,0,7);cx.clip();cx.imageSmoothingEnabled=false;cx.drawImage(mask,X-pr,Y-pr,2*pr,2*pr);cx.restore();
+  cx.lineWidth=Math.max(2,m/200);cx.strokeStyle='#ffffff';cx.setLineDash([m/60,m/90]);cx.beginPath();cx.arc(X,Y,pr,0,7);cx.stroke();cx.setLineDash([]);
+  const dirOk=r.n>40&&P<S.c&&P>=S.u*0.5;
+  if(dirOk){const a=Math.atan2(r.cy,r.cx);cx.strokeStyle='#b8f5d0';cx.fillStyle='#b8f5d0';cx.lineWidth=m/120;
+    const L=pr*0.7,ex=X+Math.cos(a)*L,ey=Y+Math.sin(a)*L;cx.beginPath();cx.moveTo(X,Y);cx.lineTo(ex,ey);cx.stroke();
+    cx.beginPath();cx.moveTo(ex+Math.cos(a)*m/30,ey+Math.sin(a)*m/30);cx.lineTo(ex+Math.cos(a+2.2)*m/40,ey+Math.sin(a+2.2)*m/40);cx.lineTo(ex+Math.cos(a-2.2)*m/40,ey+Math.sin(a-2.2)*m/40);cx.fill();}
+  // state with hysteresis
+  const was=aligned;
+  if(P>=S.c)aligned=true;else if(P<S.c-2)aligned=false;
+  if(aligned&&!was)alertAligned();
+  const st=aligned?'Aligned':P<S.u?'Apart':'Crescent forming';
+  hist.push(f);if(hist.length>240)hist.shift();
+  const trend=hist.length>20?f-hist[hist.length-20]:0;
+  $('state').textContent=st+(st==='Crescent forming'?(trend>0.01?' · closing in':trend<-0.01?' · moving apart':''):'');
+  $('badge').textContent=st;$('badge').className='badge'+(aligned?' ok':'');
+  $('pct').textContent=P.toFixed(1)+'%';
+  const fl=Math.abs(1-k);
+  $('off').textContent=(f<=0.002?'≥ ':f>=0.999&&fl>0?'≤ ':'')+fmt(mm(d))+' mm';
+  $('offLab').textContent='Centre offset · '+(d/2/Math.max(1,k)*100).toFixed(0)+'% of the larger Ø';
+  $('fill').style.width=P+'%';
+  if(dirOk){const a=Math.atan2(r.cy,r.cx)*180/Math.PI,names=['right','lower right','down','lower left','left','upper left','up','upper right'];
+    const nm=names[Math.round(((a+360)%360)/45)%8];
+    $('dir').textContent='Opening is to the '+nm+' of the circle. Move the top part that way, or the lower part the opposite way.';}
+  else $('dir').textContent=aligned?'Holes are within the completion bound.':P<S.u?'No through-light yet (or below the upper bound).':' ';
+  drawSpark();
+}
+
+/* ---- history sparkline ---- */
+const sp=$('spark'),sx=sp.getContext('2d');
+function drawSpark(){
+  const p=devicePixelRatio||1,W=sp.clientWidth*p,H=sp.clientHeight*p;if(sp.width!==W)sp.width=W;if(sp.height!==H)sp.height=H;
+  sx.clearRect(0,0,W,H);sx.strokeStyle='rgba(0,0,0,.35)';sx.lineWidth=p;sx.setLineDash([4*p,4*p]);
+  for(const v of[S.u,S.c]){const y=H-(v/100)*H;sx.beginPath();sx.moveTo(0,y);sx.lineTo(W,y);sx.stroke();}
+  sx.setLineDash([]);if(hist.length<2)return;sx.strokeStyle='#0a0a0a';sx.lineWidth=2*p;sx.beginPath();
+  hist.forEach((v,i)=>{const x=i/(239)*W,y=H-v*H*0.98-p;i?sx.lineTo(x,y):sx.moveTo(x,y)});sx.stroke();
+}
+
+/* ---- alerts ---- */
+function alertAligned(){
+  try{navigator.vibrate&&navigator.vibrate([80,40,80])}catch(e){}
+  try{if(!audio)return;const o=audio.createOscillator(),g=audio.createGain();o.frequency.value=880;g.gain.setValueAtTime(.2,audio.currentTime);g.gain.exponentialRampToValueAtTime(.001,audio.currentTime+.35);o.connect(g).connect(audio.destination);o.start();o.stop(audio.currentTime+.35);}catch(e){}
+}
+const unlockAudio=()=>{try{audio=audio||new (window.AudioContext||window.webkitAudioContext)();audio.resume()}catch(e){}};
+
+/* ---- sources ---- */
+function stop(){if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;track=null;}video.pause();$('bTorch').hidden=true;['bCam','bFile','bDemo','bRec','bPhoto'].forEach(b=>$(b).classList.remove('on'));ema=null;hist=[];lastT=null;msg('');}
+function msg(t){$('msg').textContent=t;$('msg').style.display=t?'block':'none';}
+$('bCam').onclick=async()=>{unlockAudio();stop();
+  try{
+    if(!navigator.mediaDevices?.getUserMedia)throw new Error('no api');
+    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment',width:{ideal:1920},height:{ideal:1440}},audio:false}); // same call as Trash Safari
+    video.srcObject=stream;await video.play();src='cam';$('bCam').classList.add('on');
+    track=stream.getVideoTracks()[0];const cap=track.getCapabilities?.()||{};
+    if(cap.torch)$('bTorch').hidden=false;
+    try{if(cap.focusMode?.includes('continuous'))await track.applyConstraints({advanced:[{focusMode:'continuous'}]})}catch(e){}
+  }catch(e){src=null;const why=!window.isSecureContext?'this page is not on an https website':e.name==='NotAllowedError'?'camera permission was blocked (here, or in the browser settings)':e.name==='NotFoundError'?'no camera was found':'the browser refused it ('+(e.name||e.message)+')';
+    msg('Live camera is unavailable: '+why+'. Use Record video or Take photo instead.');$('badge').textContent='No source';}
+};
+$('bAccess').onclick=async()=>{await $('bCam').onclick();$('view').scrollIntoView({behavior:'smooth',block:'start'});};
+$('bTorch').onclick=async()=>{torchOn=!torchOn;try{await track.applyConstraints({advanced:[{torch:torchOn}]});$('bTorch').classList.toggle('on',torchOn)}catch(e){torchOn=false}};
+$('bFile').onclick=()=>$('file').click();
+async function loadFile(f,btn){if(!f)return;unlockAudio();stop();
+  if(f.type.startsWith('image/')){img.onload=()=>{src='img';$(btn).classList.add('on');msg('Photo loaded. Drag the circle onto the top hole and size it to the edge.')};img.onerror=()=>msg('Could not open that photo.');img.src=URL.createObjectURL(f);return;}
+  video.srcObject=null;video.src=URL.createObjectURL(f);video.loop=true;
+  try{await video.play();src='file';$(btn).classList.add('on');msg('Drag the circle onto the top hole and size it to the edge.');setTimeout(()=>msg(''),4000)}catch(err){msg('Could not play that video. Try recording again or choose a different file.')}}
+$('file').onchange=e=>{loadFile(e.target.files[0],'bFile');e.target.value=''};
+$('rec').onchange=e=>{loadFile(e.target.files[0],'bRec');e.target.value=''};
+$('photo').onchange=e=>{loadFile(e.target.files[0],'bPhoto');e.target.value=''};
+$('bRec').onclick=()=>$('rec').click();
+$('bPhoto').onclick=()=>$('photo').click();
+$('bDemo').onclick=()=>{unlockAudio();stop();src='demo';demoT0=performance.now();$('bDemo').classList.add('on');S.bright=true;syncUI();fitDemo();};
+
+/* ---- circle dragging ---- */
+const pts=new Map();let pinch=null,pinched=false;
+const dpos=e=>{const b=cv.getBoundingClientRect(),k=cv.width/b.width;return[(e.clientX-b.left)*k,(e.clientY-b.top)*k];};
+const setC=e=>{if(!src)return;const[u,v]=toSrc(...dpos(e));S.rx=Math.min(1,Math.max(0,u));S.ry=Math.min(1,Math.max(0,v));};
+const two=()=>{const[a,b]=[...pts.values()];return{d:Math.hypot(a[0]-b[0],a[1]-b[1]),x:(a[0]+b[0])/2,y:(a[1]+b[1])/2};};
+cv.addEventListener('pointerdown',e=>{cv.setPointerCapture(e.pointerId);pts.set(e.pointerId,dpos(e));
+  if(pts.size===2){const g=two();pinch={d:g.d,x:g.x,y:g.y,Z:S.Z,src:toSrc(g.x,g.y)};pinched=true;}
+  else if(pts.size===1&&!pinched)setC(e);});
+cv.addEventListener('pointermove',e=>{if(!pts.has(e.pointerId))return;pts.set(e.pointerId,dpos(e));
+  if(pinch&&pts.size>=2){const g=two(),[vw,vh]=srcDims();S.Z=Math.min(ZMAX,Math.max(1,pinch.Z*g.d/Math.max(1,pinch.d)));
+    const s=Math.max(cv.width/vw,cv.height/vh)*S.Z;S.fx=(cv.width/2+pinch.src[0]*vw*s-g.x)/(vw*s);S.fy=(cv.height/2+pinch.src[1]*vh*s-g.y)/(vh*s);clampView();syncUI();}
+  else if(!pinched)setC(e);});
+const up=e=>{pts.delete(e.pointerId);if(pts.size<2)pinch=null;if(!pts.size){pinched=false;save();}};
+cv.addEventListener('pointerup',up);cv.addEventListener('pointercancel',up);
+cv.addEventListener('wheel',e=>{e.preventDefault();const[X,Y]=dpos(e);setZoom(S.Z*Math.exp(-e.deltaY*0.002),X,Y);},{passive:false});
+$('zIn').onclick=()=>setZoom(S.Z*1.4);$('zOut').onclick=()=>setZoom(S.Z/1.4);
+$('zReset').onclick=()=>{S.Z=1;S.fx=S.fy=.5;syncUI();};$('zFit').onclick=zoomToCircle;
+const zFromS=v=>Math.exp(v*Math.log(ZMAX)),sFromZ=z=>Math.log(z)/Math.log(ZMAX);
+$('zS').oninput=e=>setZoom(zFromS(+e.target.value));
+
+/* ---- controls ---- */
+function dispR(){const t=xf();return S.rr*Math.min(t.vw,t.vh)*t.s/Math.min(cv.width,cv.height)||0;}
+function syncUI(){
+  $('d1').value=S.d1;$('d2').value=S.d2;$('uB').value=S.u;$('cB').value=S.c;$('rS').value=Math.min(.49,Math.max(.02,dispR()));$('zS').value=sFromZ(S.Z);$('zV').textContent=S.Z.toFixed(1)+'×';$('zLab').textContent=S.Z.toFixed(1)+'×';$('autoT').checked=S.auto;$('thr').value=S.thr;$('thr').disabled=S.auto;
+  $('pBright').classList.toggle('on',S.bright);$('pDark').classList.toggle('on',!S.bright);
+  const k=kk(),fl=Math.abs(S.d1-S.d2)/2;
+  $('uV').textContent=S.u+'% · offset '+fmt(mm(offsetFor(S.u/100,k)))+' mm';
+  $('cV').textContent=S.c+'% · offset '+fmt(mm(offsetFor(S.c/100,k)))+' mm';
+  $('rV').textContent=(dispR()*100).toFixed(0)+'% of view';
+  $('floatTxt').textContent=fl>0?'Holes differ by '+fmt(fl*2)+' mm: up to '+fmt(fl)+' mm offset still reads fully open (float). Max visible opening = '+(Math.min(1,k)**2*100).toFixed(0)+'% of the top hole.':'Equal holes: only a centred position reads fully open.';
+  $('mkU').style.left=S.u+'%';$('mkC').style.left=S.c+'%';
+  $('calTxt').textContent=S.cal!=null?'Calibrated: fully open = '+(S.cal*100).toFixed(1)+'% of the circle.':'Uses the geometric maximum. With the holes aligned, tap "Set as fully open" to calibrate to your parts.';
+  save();
+}
+const num=(id,key)=>$(id).addEventListener('input',e=>{const v=parseFloat(e.target.value);if(v>0){S[key]=v;syncUI()}});
+num('d1','d1');num('d2','d2');
+$('uB').oninput=e=>{S.u=Math.min(+e.target.value,S.c-1);syncUI()};
+$('cB').oninput=e=>{S.c=Math.max(+e.target.value,S.u+1);syncUI()};
+$('rS').oninput=e=>{const t=xf();S.rr=(+e.target.value)*Math.min(cv.width,cv.height)/t.s/Math.min(t.vw,t.vh);syncUI()};
+$('pBright').onclick=()=>{S.bright=true;lastT=null;syncUI()};
+$('pDark').onclick=()=>{S.bright=false;lastT=null;syncUI()};
+$('autoT').onchange=e=>{S.auto=e.target.checked;syncUI()};
+$('thr').oninput=e=>{S.thr=+e.target.value;save()};
+$('bCal').onclick=()=>{if(!src){msg('Start a source first.');return}
+  const fr=measure(src==='demo'?demo:src==='img'?img:video).frac;if(fr<0.05){msg('Too little opening visible to calibrate. Align the holes first.');return}S.cal=fr;ema=null;syncUI();};
+$('bCalR').onclick=()=>{S.cal=null;ema=null;syncUI()};
+
+size();syncUI();requestAnimationFrame(frame);
+if(location.hash==='#demo')$('bDemo').click();
+}
+</script>
+</body>
+</html>
